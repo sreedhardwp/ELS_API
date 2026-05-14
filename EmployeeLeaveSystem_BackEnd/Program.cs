@@ -8,12 +8,12 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Database
+// Database
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration
         .GetConnectionString("DefaultConnection")));
 
-// 2. JWT
+// JWT
 var jwt = builder.Configuration.GetSection("JwtSettings");
 var key = Encoding.UTF8.GetBytes(jwt["SecretKey"]!);
 
@@ -32,7 +32,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// 3. Authorization
+// Authorization
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("EmployeeOnly", p => p.RequireRole("Employee"));
@@ -41,11 +41,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ManagerOrHR", p => p.RequireRole("Manager", "HRAdmin"));
 });
 
-// 4. Services
+// Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
-// 5. CORS
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
@@ -57,7 +57,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 
-// 6. Swagger with JWT
+// Swagger with JWT
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
