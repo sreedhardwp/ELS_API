@@ -57,7 +57,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 
-// 6. ✅ Swagger with JWT
+// 6. Swagger with JWT
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
