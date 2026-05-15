@@ -54,11 +54,7 @@ namespace EmployeeLeaveSystem_BackEnd.Controllers
             try
             {
                 var leaves = await _leaveService.GetPendingLeavesAsync();
-
-                if (leaves == null || !leaves.Any())
-                    return NotFound("No pending leave requests found.");
-
-                return Ok(leaves);
+                return Ok(leaves ?? new List<LeaveRequestResponseDto>());
             }
             catch (Exception ex)
             {
