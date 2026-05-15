@@ -18,22 +18,56 @@ namespace EmployeeLeaveSystem_BackEnd.Controllers
             _leaveService = leaveService;
         }
 
-        // GET api/leaverequest/my leave
-        [HttpGet("my leave")]
+        // GET api/leaverequest/myleave
+        [HttpGet("myleave")]
         public async Task<IActionResult> GetMyLeaves()
         {
-            var employeeId = GetEmployeeId();
-            var leaves = await _leaveService.GetMyLeavesAsync(employeeId);
-            return Ok(leaves);
+            try
+            {
+                var employeeId = GetEmployeeId();
+
+                if (employeeId <= 0)
+                    return Unauthorized("Invalid employee token.");
+
+                var leaves = await _leaveService.GetMyLeavesAsync(employeeId);
+
+                if (leaves == null || !leaves.Any())
+                    return NotFound("No leave records found.");
+
+                return Ok(leaves);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Message = "An error occurred while fetching leave records.",
+                    Error = ex.Message
+                });
+            }
         }
 
-        // GET api/leaverequest/pending  (Manager/HR only)
+        // GET api/leaverequest/pending
         [HttpGet("pending")]
         [Authorize(Policy = "ManagerOrHR")]
         public async Task<IActionResult> GetPendingLeaves()
         {
-            var leaves = await _leaveService.GetPendingLeavesAsync();
-            return Ok(leaves);
+            try
+            {
+                var leaves = await _leaveService.GetPendingLeavesAsync();
+
+                if (leaves == null || !leaves.Any())
+                    return NotFound("No pending leave requests found.");
+
+                return Ok(leaves);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Message = "An error occurred while fetching pending leaves.",
+                    Error = ex.Message
+                });
+            }
         }
 
         // POST api/leaverequest/apply
@@ -41,32 +75,77 @@ namespace EmployeeLeaveSystem_BackEnd.Controllers
         [Authorize(Policy = "EmployeeOnly")]
         public async Task<IActionResult> ApplyLeave([FromBody] CreateLeaveRequestDto dto)
         {
-            var employeeId = GetEmployeeId();
-            var result = await _leaveService.ApplyLeaveAsync(dto, employeeId);
-            if (!result)
-                return BadRequest("Insufficient leave balance or invalid request.");
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
 
-            return Ok("Leave applied successfully.");
+                var employeeId = GetEmployeeId();
+
+                if (employeeId <= 0)
+                    return Unauthorized("Invalid employee token.");
+
+                var result = await _leaveService.ApplyLeaveAsync(dto, employeeId);
+
+                if (!result)
+                    return BadRequest("Insufficient leave balance or invalid request.");
+
+                return Ok("Leave applied successfully.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Message = "An error occurred while applying leave.",
+                    Error = ex.Message
+                });
+            }
         }
 
-        // DELETE api/leaverequest/cancel/5
+        // DELETE api/leaverequest/cancel/id
         [HttpDelete("cancel/{id}")]
         [Authorize(Policy = "EmployeeOnly")]
         public async Task<IActionResult> CancelLeave(int id)
         {
-            var employeeId = GetEmployeeId();
-            var result = await _leaveService.CancelLeaveAsync(id, employeeId);
-            if (!result)
-                return BadRequest("Cannot cancel. Leave not found or already processed.");
+            try
+            {
+                var employeeId = GetEmployeeId();
 
-            return Ok("Leave cancelled successfully.");
+                if (employeeId <= 0)
+                    return Unauthorized("Invalid employee token.");
+
+                var result = await _leaveService.CancelLeaveAsync(id, employeeId);
+
+                if (!result)
+                    return BadRequest("Cannot cancel. Leave not found or already processed.");
+
+                return Ok("Leave cancelled successfully.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Message = "An error occurred while cancelling leave.",
+                    Error = ex.Message
+                });
+            }
         }
 
-        // Helper — reads EmployeeId from JWT token
         private int GetEmployeeId()
         {
-            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            return int.Parse(claim!);
+            try
+            {
+                var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                if (string.IsNullOrEmpty(claim))
+                    return 0;
+
+                return int.Parse(claim);
+            }
+            catch
+            {
+                return 0;
+            }
         }
     }
 }
