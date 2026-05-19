@@ -21,7 +21,13 @@ namespace EmployeeLeaveSystem_BackEnd.Services
             if (employee == null) return false;
 
             int days = (dto.EndDate - dto.StartDate).Days + 1;
-            if (employee.LeaveBalance < days) return false;
+            var leaveType = await _context.LeaveTypes
+                            .FirstOrDefaultAsync(x => x.LeaveTypeId == dto.LeaveTypeId);
+            if (leaveType == null)
+                return false;
+
+            if (days > leaveType.MaxDaysAllowed)
+                return false;
 
             var leaveRequest = new LeaveRequest
             {

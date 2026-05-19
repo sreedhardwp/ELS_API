@@ -36,10 +36,10 @@ namespace EmployeeLeaveSystem_BackEnd.Data
 
             // Seed LeaveTypes
             modelBuilder.Entity<LeaveType>().HasData(
-                new LeaveType { LeaveTypeId = 1, Name = "Annual", MaxDaysAllowed = 15 },
-                new LeaveType { LeaveTypeId = 2, Name = "Sick", MaxDaysAllowed = 10 },
-                new LeaveType { LeaveTypeId = 3, Name = "Casual", MaxDaysAllowed = 7 },
-                new LeaveType { LeaveTypeId = 4, Name = "Maternity", MaxDaysAllowed = 90 }
+                new LeaveType { LeaveTypeId = 1, Name = "Annual Leave", MaxDaysAllowed = 15 },
+                new LeaveType { LeaveTypeId = 2, Name = "Sick Leave", MaxDaysAllowed = 10 },
+                new LeaveType { LeaveTypeId = 3, Name = "Casual Leave", MaxDaysAllowed = 7 },
+                new LeaveType { LeaveTypeId = 4, Name = "Maternity Leave", MaxDaysAllowed = 90 }
             );
         }
     }

@@ -11,7 +11,7 @@ namespace EmployeeLeaveSystem_BackEnd.Models
         [Required, MaxLength(50)]
         public string Name { get; set; } = string.Empty; // Annual, Sick, Casual, Maternity
 
-        public int MaxDaysAllowed { get; set; } = 10;
+        public int MaxDaysAllowed { get; set; }
 
         public ICollection<LeaveRequest> LeaveRequests { get; set; } = new List<LeaveRequest>();
 
