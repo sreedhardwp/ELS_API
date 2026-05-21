@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="EmployeeLeaveSystem_BackEnd/EmployeeLeaveSystem_BackEnd.csproj" />
+  <Project Path="EmployeeLeaveSystem_Tests/EmployeeLeaveSystem_Tests.csproj" Id="953dc8d9-d09c-4919-85d2-bff286bb1302" />
 </Solution>
