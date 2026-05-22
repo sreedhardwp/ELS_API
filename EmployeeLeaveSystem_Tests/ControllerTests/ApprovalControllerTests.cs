@@ -1,40 +1,56 @@
 ﻿using System;
-using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using EmployeeLeaveSystem_BackEnd.Controllers;
-using EmployeeLeaveSystem_BackEnd.Data;
 using EmployeeLeaveSystem_BackEnd.DTOs;
-using EmployeeLeaveSystem_BackEnd.Models;
+using EmployeeLeaveSystem_BackEnd.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace EmployeeLeaveSystem_Tests.ControllerTests
 {
-    public class ApprovalControllerTests
+    // ✅ Manual fake — no Moq needed
+    public class FakeApprovalService : IApprovalService
     {
-        private static AppDbContext CreateContext(string dbName)
-        {
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseInMemoryDatabase(dbName)
-                .Options;
+        public IActionResult DecideResult { get; set; }
+        public IActionResult HistoryResult { get; set; }
+        public bool ThrowOnDecide { get; set; } = false;
+        public bool ThrowOnHistory { get; set; } = false;
 
-            var context = new AppDbContext(options);
-            return context;
+        public Task<IActionResult> DecideAsync(ApprovalDto.ApprovalRequestDto dto, ClaimsPrincipal user)
+        {
+            if (ThrowOnDecide)
+                throw new Exception("Simulated service failure");
+
+            return Task.FromResult(DecideResult);
         }
 
-        private static ApprovalController CreateControllerWithUser(AppDbContext context, int? userId = null)
+        public Task<IActionResult> GetHistoryAsync()
         {
-            var controller = new ApprovalController(context);
+            if (ThrowOnHistory)
+                throw new Exception("Simulated service failure");
+
+            return Task.FromResult(HistoryResult);
+        }
+    }
+
+    public class ApprovalControllerTests
+    {
+        // ✅ Creates controller with fake service and optional user claim
+        private static ApprovalController CreateController(
+            FakeApprovalService fakeService,
+            int? userId = null)
+        {
+            var controller = new ApprovalController(fakeService);
 
             var httpContext = new DefaultHttpContext();
             if (userId.HasValue)
             {
                 var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId.Value.ToString()) };
-                httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims));
+                httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
             }
             else
             {
@@ -49,79 +65,46 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
             return controller;
         }
 
+        // ─── Decide Tests ────────────────────────────────────────────────
+
         [Fact]
-        public async Task Decide_Approve_SucceedsAndReducesBalance()
+        public async Task Decide_Approve_ReturnsOk()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            // Seed employee, manager, and leave request
-            var employee = new Employee { EmployeeId = 1, Name = "Emp", Email = "emp@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 10 };
-            var manager = new Employee { EmployeeId = 2, Name = "Mgr", Email = "mgr@test.local", PasswordHash = "x", Role = "Manager", LeaveBalance = 20 };
-            context.Employees.AddRange(employee, manager);
-
-            var leaveRequest = new LeaveRequest
+            var fakeService = new FakeApprovalService
             {
-                LeaveRequestId = 1,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date.AddDays(2), // 3 days
-                Status = "Pending"
+                DecideResult = new OkObjectResult("Approved successfully")
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            await context.SaveChangesAsync();
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 1,
+                Decision = "Approved",
+                Remarks = "OK"
+            };
 
-            var controller = CreateControllerWithUser(context, manager.EmployeeId);
-
-            var dto = new ApprovalDto.ApprovalRequestDto { LeaveRequestId = leaveRequest.LeaveRequestId, Decision = "Approved", Remarks = "OK" };
-
+            var controller = CreateController(fakeService, userId: 2);
             var result = await controller.Decide(dto);
 
             var ok = Assert.IsType<OkObjectResult>(result);
             Assert.Contains("Approved", ok.Value?.ToString());
-
-            // Reload entities to check effects
-            var lr = await context.LeaveRequests.Include(l => l.Employee).FirstAsync(l => l.LeaveRequestId == leaveRequest.LeaveRequestId);
-            Assert.Equal("Approved", lr.Status);
-            Assert.Equal(7, lr.Employee.LeaveBalance); // 10 - 3
-
-            var approval = await context.Approvals.FirstOrDefaultAsync(a => a.LeaveRequestId == leaveRequest.LeaveRequestId);
-            Assert.NotNull(approval);
-            Assert.Equal("Approved", approval.Decision);
-            Assert.Equal(manager.EmployeeId, approval.ManagerId);
         }
 
         [Fact]
         public async Task Decide_InsufficientBalance_ReturnsBadRequest()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            var employee = new Employee { EmployeeId = 1, Name = "Emp2", Email = "emp2@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 1 };
-            var manager = new Employee { EmployeeId = 2, Name = "Mgr2", Email = "mgr2@test.local", PasswordHash = "x", Role = "Manager", LeaveBalance = 20 };
-            context.Employees.AddRange(employee, manager);
-
-            var leaveRequest = new LeaveRequest
+            var fakeService = new FakeApprovalService
             {
-                LeaveRequestId = 2,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date.AddDays(2), // 3 days
-                Status = "Pending"
+                DecideResult = new BadRequestObjectResult("Insufficient leave balance")
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            await context.SaveChangesAsync();
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 2,
+                Decision = "Approved",
+                Remarks = "OK"
+            };
 
-            var controller = CreateControllerWithUser(context, manager.EmployeeId);
-
-            var dto = new ApprovalDto.ApprovalRequestDto { LeaveRequestId = leaveRequest.LeaveRequestId, Decision = "Approved", Remarks = "OK" };
-
+            var controller = CreateController(fakeService, userId: 2);
             var result = await controller.Decide(dto);
 
             var bad = Assert.IsType<BadRequestObjectResult>(result);
@@ -131,31 +114,19 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
         [Fact]
         public async Task Decide_InvalidDecision_ReturnsBadRequest()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            var employee = new Employee { EmployeeId = 3, Name = "Emp3", Email = "emp3@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 10 };
-            var manager = new Employee { EmployeeId = 4, Name = "Mgr3", Email = "mgr3@test.local", PasswordHash = "x", Role = "Manager", LeaveBalance = 20 };
-            context.Employees.AddRange(employee, manager);
-
-            var leaveRequest = new LeaveRequest
+            var fakeService = new FakeApprovalService
             {
-                LeaveRequestId = 3,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date,
-                Status = "Pending"
+                DecideResult = new BadRequestObjectResult("Decision must be 'Approved' or 'Rejected'")
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            await context.SaveChangesAsync();
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 3,
+                Decision = "Maybe",
+                Remarks = "?"
+            };
 
-            var controller = CreateControllerWithUser(context, manager.EmployeeId);
-
-            var dto = new ApprovalDto.ApprovalRequestDto { LeaveRequestId = leaveRequest.LeaveRequestId, Decision = "Maybe", Remarks = "?" };
-
+            var controller = CreateController(fakeService, userId: 4);
             var result = await controller.Decide(dto);
 
             var bad = Assert.IsType<BadRequestObjectResult>(result);
@@ -165,30 +136,19 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
         [Fact]
         public async Task Decide_NoUserClaim_ReturnsUnauthorized()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            var employee = new Employee { EmployeeId = 5, Name = "Emp5", Email = "emp5@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 10 };
-            context.Employees.Add(employee);
-
-            var leaveRequest = new LeaveRequest
+            var fakeService = new FakeApprovalService
             {
-                LeaveRequestId = 5,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date,
-                Status = "Pending"
+                DecideResult = new UnauthorizedObjectResult("Unauthorized")
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            await context.SaveChangesAsync();
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 5,
+                Decision = "Approved",
+                Remarks = "OK"
+            };
 
-            var controller = CreateControllerWithUser(context, null);
-
-            var dto = new ApprovalDto.ApprovalRequestDto { LeaveRequestId = leaveRequest.LeaveRequestId, Decision = "Approved", Remarks = "OK" };
-
+            var controller = CreateController(fakeService, userId: null); // no user
             var result = await controller.Decide(dto);
 
             Assert.IsType<UnauthorizedObjectResult>(result);
@@ -197,44 +157,57 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
         [Fact]
         public async Task Decide_AlreadyProcessed_ReturnsNotFound()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            var employee = new Employee { EmployeeId = 6, Name = "Emp6", Email = "emp6@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 10 };
-            var manager = new Employee { EmployeeId = 7, Name = "Mgr6", Email = "mgr6@test.local", PasswordHash = "x", Role = "Manager", LeaveBalance = 20 };
-            context.Employees.AddRange(employee, manager);
-
-            var leaveRequest = new LeaveRequest
+            var fakeService = new FakeApprovalService
             {
-                LeaveRequestId = 6,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date,
-                Status = "Approved"
+                DecideResult = new NotFoundObjectResult("Already processed")
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            await context.SaveChangesAsync();
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 6,
+                Decision = "Rejected",
+                Remarks = "Late"
+            };
 
-            var controller = CreateControllerWithUser(context, manager.EmployeeId);
-
-            var dto = new ApprovalDto.ApprovalRequestDto { LeaveRequestId = leaveRequest.LeaveRequestId, Decision = "Rejected", Remarks = "Late" };
-
+            var controller = CreateController(fakeService, userId: 7);
             var result = await controller.Decide(dto);
 
             Assert.IsType<NotFoundObjectResult>(result);
         }
 
         [Fact]
+        public async Task Decide_ServiceThrowsException_Returns500()
+        {
+            var fakeService = new FakeApprovalService
+            {
+                ThrowOnDecide = true  // ✅ triggers exception inside fake
+            };
+
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 99,
+                Decision = "Approved",
+                Remarks = "OK"
+            };
+
+            var controller = CreateController(fakeService, userId: 2);
+            var result = await controller.Decide(dto);
+
+            var serverError = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, serverError.StatusCode);
+        }
+
+        // ─── GetHistory Tests ────────────────────────────────────────────
+
+        [Fact]
         public async Task GetHistory_NoRecords_ReturnsNotFound()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
+            var fakeService = new FakeApprovalService
+            {
+                HistoryResult = new NotFoundObjectResult("No approval history found")
+            };
 
-            var controller = CreateControllerWithUser(context, 1);
-
+            var controller = CreateController(fakeService, userId: 1);
             var result = await controller.GetHistory();
 
             Assert.IsType<NotFoundObjectResult>(result);
@@ -243,49 +216,37 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
         [Fact]
         public async Task GetHistory_WithRecords_ReturnsOkList()
         {
-            var dbName = Guid.NewGuid().ToString();
-            using var context = CreateContext(dbName);
-
-            var employee = new Employee { EmployeeId = 10, Name = "Emp10", Email = "emp10@test.local", PasswordHash = "x", Role = "Employee", LeaveBalance = 10 };
-            var manager = new Employee { EmployeeId = 11, Name = "Mgr10", Email = "mgr10@test.local", PasswordHash = "x", Role = "Manager", LeaveBalance = 20 };
-            context.Employees.AddRange(employee, manager);
-
-            var leaveRequest = new LeaveRequest
+            var fakeHistory = new List<object>
             {
-                LeaveRequestId = 10,
-                EmployeeId = employee.EmployeeId,
-                Employee = employee,
-                LeaveTypeId = 1,
-                StartDate = DateTime.UtcNow.Date,
-                EndDate = DateTime.UtcNow.Date,
-                Status = "Approved"
+                new { ApprovalId = 1, Decision = "Approved", ManagerId = 11, LeaveRequestId = 10 }
             };
 
-            var approval = new Approval
+            var fakeService = new FakeApprovalService
             {
-                ApprovalId = 1,
-                LeaveRequestId = leaveRequest.LeaveRequestId,
-                LeaveRequest = leaveRequest,
-                ManagerId = manager.EmployeeId,
-                Manager = manager,
-                Decision = "Approved",
-                Remarks = "ok",
-                DecisionDate = DateTime.UtcNow
+                HistoryResult = new OkObjectResult(fakeHistory)
             };
 
-            context.LeaveRequests.Add(leaveRequest);
-            context.Approvals.Add(approval);
-            await context.SaveChangesAsync();
-
-            var controller = CreateControllerWithUser(context, manager.EmployeeId);
-
+            var controller = CreateController(fakeService, userId: 11);
             var result = await controller.GetHistory();
 
             var ok = Assert.IsType<OkObjectResult>(result);
             var list = Assert.IsAssignableFrom<System.Collections.IEnumerable>(ok.Value);
-            // Basic check: one record
-            var arr = ((System.Collections.IEnumerable)ok.Value).Cast<object>().ToArray();
-            Assert.Single(arr);
+            Assert.Single(list.Cast<object>());
+        }
+
+        [Fact]
+        public async Task GetHistory_ServiceThrowsException_Returns500()
+        {
+            var fakeService = new FakeApprovalService
+            {
+                ThrowOnHistory = true  // ✅ triggers exception inside fake
+            };
+
+            var controller = CreateController(fakeService, userId: 1);
+            var result = await controller.GetHistory();
+
+            var serverError = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, serverError.StatusCode);
         }
     }
 }
