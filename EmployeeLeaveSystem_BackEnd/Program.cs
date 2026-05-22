@@ -42,6 +42,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 // Services
+builder.Services.AddScoped<IApprovalService, ApprovalService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
