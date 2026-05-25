@@ -90,6 +90,30 @@ namespace EmployeeLeaveSystem_Tests.ControllerTests
         }
 
         [Fact]
+        public async Task Decide_Should_Fail_When_Expecting_Ok_But_BadRequest_Returned()
+        {
+            var fakeService = new FakeApprovalService
+            {
+                DecideResult = new BadRequestObjectResult("Approval failed")
+            };
+
+            var dto = new ApprovalDto.ApprovalRequestDto
+            {
+                LeaveRequestId = 1,
+                Decision = "Approved",
+                Remarks = "OK"
+            };
+
+            var controller = CreateController(fakeService, userId: 2);
+            var result = await controller.Decide(dto);
+
+            
+            var ok = Assert.IsType<OkObjectResult>(result);
+        }
+
+
+
+        [Fact]
         public async Task Decide_InsufficientBalance_ReturnsBadRequest()
         {
             var fakeService = new FakeApprovalService
